@@ -2,8 +2,8 @@
   (:require [clojure.stacktrace :refer [root-cause]]
             [clojure.walk :refer [walk postwalk-replace]]
             [clojail.jvm :refer [permissions domain context jvm-sandbox]]
-            [flatland.useful.seq :refer [flatten-all]]) 
-  (:import (java.util.concurrent TimeoutException TimeUnit FutureTask)
+            [flatland.useful.seq :refer [flatten-all]])
+  (:import (java.util.concurrent TimeoutException TimeUnit FutureTask ExecutionException)
            (clojure.lang LispReader$ReaderException)))
 
 (defn eagerly-consume
@@ -38,11 +38,11 @@
          (.get task time (or (uglify-time-unit unit) unit))
          (catch TimeoutException e
            (.cancel task true)
-           (.stop thr) 
+           (.stop thr)
            (throw (TimeoutException. "Execution timed out.")))
          (catch Exception e
            (.cancel task true)
-           (.stop thr) 
+           (.stop thr)
            (throw e))
          (finally (when tg (.stop tg)))))))
 
@@ -61,8 +61,8 @@
   "Macroexpand most, but not all. Leave non-collections and quoted things alone."
   [form]
   (if (or
-       (not (coll? form)) 
-       (and (seq? form) 
+       (not (coll? form))
+       (and (seq? form)
             (= 'quote (first form))))
     form
     (walk macroexpand-most identity (macroexpand form))))
@@ -218,13 +218,24 @@
               old-defs (user-defs nspace)]
           (when jvm (set-security-manager (SecurityManager.)))
           (try
-            (if-let [problem (check-form code tester nspace)] 
+            (if-let [problem (check-form code tester nspace)]
               (security-exception problem)
               (thunk-timeout
                (evaluator code tester-sym tester-str context nspace transform bindings)
                timeout
                :ms
                (ThreadGroup. "sandbox")))
+            (catch SecurityException e
+              (throw e))
+            (catch ExecutionException e
+              (throw e))
+            (catch Exception e
+              (throw (ex-info "Error evaluating in sandbox"
+                              {:code      code
+                               :namespace nspace
+                               :context   context
+                               :bindings  bindings}
+                              e)))
             (finally (wipe-defs init-defs old-defs max-defs nspace))))))))
 
 (defn sandbox
@@ -263,4 +274,3 @@ IllegalStateException; other exceptions will be thrown unchanged."
   ([str]
      (with-in-str str
        (safe-read))))
-
