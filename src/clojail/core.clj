@@ -152,14 +152,22 @@
 
 (defn- evaluator [code tester-sym tester-str context nspace transform bindings]
   (fn []
-    (binding [*ns* nspace
+    (binding [*ns*        nspace
               *read-eval* false]
       (let [bindings (or bindings {})
-            code `(do (def ~tester-sym (binding [*read-eval* true]
-                                         (read-string ~tester-str)))
-                       ~(make-dot tester-sym)
-                       ~(ensafen code))]
-        (with-bindings bindings (jvm-sandbox #(transform (eval code)) context))))))
+            code     `(do (def ~tester-sym (binding [*read-eval* true]
+                                             (read-string ~tester-str)))
+                          ~(make-dot tester-sym)
+                          ~(ensafen code))]
+        (try
+          (with-bindings bindings (jvm-sandbox #(transform (eval code)) context))
+          (catch Exception e
+            (throw (ex-info "Error evaluating in sandbox"
+                            {:code      code
+                             :namespace nspace
+                             :context   context
+                             :bindings  bindings}
+                            e))))))))
 
 (defn set-security-manager
   "Sets the system security manager to whatever you pass. Passing nil is
@@ -230,7 +238,7 @@
             (catch ExecutionException e
               (throw e))
             (catch Exception e
-              (throw (ex-info "Error evaluating in sandbox"
+              (throw (ex-info "Error setting up sandbox"
                               {:code      code
                                :namespace nspace
                                :context   context
