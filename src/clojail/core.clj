@@ -44,7 +44,7 @@
            (.cancel task true)
            (.stop thr)
            (throw e))
-         (finally (when tg (.stop tg)))))))
+         #_(finally (when tg (.stop tg)))))))
 
 (defn safe-resolve
   "Resolves things safely."
